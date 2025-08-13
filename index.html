@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Evolution Simulator – Predator & Prey</title>
+<style>
+  :root{
+    --bg:#0e0f12; --panel:#14161b; --ink:#e8f1ff; --muted:#8aa0b6; --accent:#7dd3fc; --good:#86efac; --bad:#fca5a5;
+    --card:#1a1d24; --wire:#6b7280; --pos:#60a5fa; --neg:#f472b6;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+  .wrap{display:grid;grid-template-columns:1fr 560px;grid-template-rows:1fr;gap:10px;height:100%}
+  #simWrap{position:relative}
+  #sim{width:100%;height:100%;display:block;background:radial-gradient(1200px 800px at 50% 50%, #0f1320 0%, #0b0d12 70%, #08090c 100%)}
+  .hud{position:absolute;left:10px;top:10px;padding:6px 10px;background:#0008;border:1px solid #ffffff1a;border-radius:10px;font-size:12px;backdrop-filter: blur(4px)}
+
+  aside{background:var(--panel);border-left:1px solid #ffffff14;display:flex;flex-direction:column;min-height:0}
+  header{padding:10px 12px;border-bottom:1px solid #ffffff14;display:flex;align-items:center;gap:10px}
+  header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.3px}
+  header button{padding:6px 10px;border-radius:10px;border:1px solid #ffffff22;background:#0b0d12;color:var(--ink);cursor:pointer}
+  header button:hover{border-color:#ffffff44}
+
+  .panel{padding:10px 12px;overflow:auto;min-height:0}
+  .grid{display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;align-items:center}
+  .grid h3{grid-column:1/-1;margin:10px 0 0;font-size:13px;color:var(--muted);font-weight:600}
+  .grid label{font-size:12px;color:var(--muted)}
+  .grid input[type=range]{width:100%}
+  .grid .val{font-variant-numeric:tabular-nums;color:var(--ink)}
+
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+  .stat{background:var(--card);border:1px solid #ffffff14;border-radius:12px;padding:8px}
+  .stat b{display:block;font-size:11px;color:var(--muted)}
+  .stat span{font-size:14px}
+
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .row button,.row select,.row input[type=checkbox]{border-radius:10px;border:1px solid #ffffff22;background:#0b0d12;color:var(--ink);padding:6px 10px}
+  .row button{cursor:pointer}
+  .row button:hover{border-color:#ffffff44}
+
+  /* align follow controls neatly */
+  .row.controls{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center}
+  .row.controls select{width:100%;min-width:0}
+  .row.controls button{white-space:nowrap}
+
+  .viewer{margin-top:10px;background:var(--card);border:1px solid #ffffff14;border-radius:12px;padding:8px}
+  .viewer h3{margin:0 0 6px;font-size:13px;color:var(--muted)}
+  #nnCanvas{width:100%;height:300px;display:block;background:linear-gradient(180deg,#0c0f16,#0b0d12)}
+  .small{font-size:11px;color:var(--muted)}
+  .legend{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
+  .chip{display:inline-flex;gap:6px;align-items:center;background:#0b0d12;border:1px solid #ffffff1a;padding:4px 8px;border-radius:20px;font-size:11px}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.prey{background:var(--good)}
+  .dot.pred{background:var(--bad)}
+  .dot.food{background:var(--accent)}
+  .dot.pos{background:var(--pos)}
+  .dot.neg{background:var(--neg)}
+
+  .help{margin-top:8px;font-size:11px;color:var(--muted)}
+  .insights{margin-top:8px;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12px}
+  .insights .k{color:var(--muted)}
+  .insights .v{font-variant-numeric:tabular-nums}
+  .swatch{width:12px;height:12px;display:inline-block;border:1px solid #ffffff44;border-radius:3px;margin-right:6px;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section id="simWrap">
+    <canvas id="sim"></canvas>
+    <div class="hud" id="hud">Click an agent to inspect its brain • Space: Pause/Run • Shift+Click: step</div>
+  </section>
+  <aside>
+    <header>
+      <h1>Evolution Simulator</h1>
+      <button id="btnRun">⏸ Pause</button>
+      <button id="btnStep">⏭ Step</button>
+      <button id="btnReset">♻ Reset</button>
+    </header>
+    <div class="panel">
+      <div class="grid" id="controls">
+        <h3>Populations</h3>
+        <label>Prey max</label><input type="range" min="5" max="300" step="1" id="preyMax"/><div class="val" data-for="preyMax"></div>
+        <label>Predator max</label><input type="range" min="1" max="120" step="1" id="predMax"/><div class="val" data-for="predMax"></div>
+        <label>Food density</label><input type="range" min="50" max="1200" step="10" id="foodCount"/><div class="val" data-for="foodCount"></div>
+        <label>Food respawn/s</label><input type="range" min="0" max="10" step="0.1" id="foodRespawn"/><div class="val" data-for="foodRespawn"></div>
+
+        <h3>Energy & Fitness</h3>
+        <label>Prey metabolism</label><input type="range" min="0.01" max="0.5" step="0.01" id="preyMet"/><div class="val" data-for="preyMet"></div>
+        <label>Pred metabolism</label><input type="range" min="0.01" max="0.8" step="0.01" id="predMet"/><div class="val" data-for="predMet"></div>
+        <label>Move cost</label><input type="range" min="0" max="0.6" step="0.01" id="moveCost"/><div class="val" data-for="moveCost"></div>
+        <label>Repro threshold</label><input type="range" min="5" max="60" step="1" id="reproThresh"/><div class="val" data-for="reproThresh"></div>
+        <label>Repro cooldown (s)</label><input type="range" min="0.5" max="15" step="0.5" id="reproCooldown"/><div class="val" data-for="reproCooldown"></div>
+        <label>Energy from food</label><input type="range" min="1" max="20" step="1" id="foodEnergy"/><div class="val" data-for="foodEnergy"></div>
+        <label>Energy from prey</label><input type="range" min="5" max="60" step="1" id="predEnergyGain"/><div class="val" data-for="predEnergyGain"></div>
+
+        <h3>Perception & Motion</h3>
+        <label>Vision radius</label><input type="range" min="30" max="350" step="5" id="visionRadius"/><div class="val" data-for="visionRadius"></div>
+        <label>Max speed</label><input type="range" min="25" max="260" step="5" id="maxSpeed"/><div class="val" data-for="maxSpeed"></div>
+        <label>Turn rate (rad/s)</label><input type="range" min="1" max="12" step="0.1" id="turnRate"/><div class="val" data-for="turnRate"></div>
+        <label>Timescale</label><input type="range" min="0.1" max="4" step="0.05" id="timescale"/><div class="val" data-for="timescale"></div>
+
+        <h3>Evolution (Topology + Weights)</h3>
+        <label>Weight mutate</label><input type="range" min="0" max="1" step="0.01" id="mutWeight"/><div class="val" data-for="mutWeight"></div>
+        <label>Add connection</label><input type="range" min="0" max="0.6" step="0.01" id="mutAddConn"/><div class="val" data-for="mutAddConn"></div>
+        <label>Remove connection</label><input type="range" min="0" max="0.3" step="0.01" id="mutDelConn"/><div class="val" data-for="mutDelConn"></div>
+        <label>Add node</label><input type="range" min="0" max="0.3" step="0.01" id="mutAddNode"/><div class="val" data-for="mutAddNode"></div>
+        <label>Remove node</label><input type="range" min="0" max="0.2" step="0.01" id="mutDelNode"/><div class="val" data-for="mutDelNode"></div>
+
+        <label>Init depth</label><input type="range" min="1" max="8" step="1" id="initDepth"/><div class="val" data-for="initDepth"></div>
+        <label>Pred base dmg</label><input type="range" min="1" max="20" step="1" id="predBaseDamage"/><div class="val" data-for="predBaseDamage"></div>
+        <label>Color mutate (±)</label><input type="range" min="0" max="40" step="1" id="mutColor"/><div class="val" data-for="mutColor"></div>
+
+        <h3>Rendering</h3>
+        <label><input type="checkbox" id="showVision"/> Show vision</label><div></div>
+        <label><input type="checkbox" id="showTrails"/> Trails</label><div></div>
+        <label><input type="checkbox" id="lockCameraOnSelected"/> Lock camera on selected</label><div></div>
+        <label><input type="checkbox" id="showHeatPrey"/> Prey heatmap</label><div></div>
+        <label><input type="checkbox" id="showHeatPred"/> Predator heatmap</label><div></div>
+        <label>Heat decay (/s)</label><input type="range" min="0" max="3" step="0.05" id="heatDecay"/><div class="val" data-for="heatDecay"></div>
+        <label>Heat intensity</label><input type="range" min="0" max="2" step="0.05" id="heatIntensity"/><div class="val" data-for="heatIntensity"></div>
+      </div>
+
+      <div class="stats" id="stats">
+        <div class="stat"><b>Prey</b><span id="statPrey">0</span></div>
+        <div class="stat"><b>Predators</b><span id="statPred">0</span></div>
+        <div class="stat"><b>Food</b><span id="statFood">0</span></div>
+        <div class="stat"><b>Generation (approx)</b><span id="statGen">0</span></div>
+        <div class="stat"><b>Avg NN size</b><span id="statNN">0</span></div>
+        <div class="stat"><b>FPS</b><span id="statFPS">0</span></div>
+      </div>
+
+      <div class="row controls" style="margin-top:10px">
+        <select id="selFollow">
+          <option value="selected">Follow: Selected</option>
+          <option value="best_prey">Follow: Best Prey</option>
+          <option value="best_pred">Follow: Best Predator</option>
+          <option value="most_nodes">Follow: Most Nodes (Any)</option>
+          <option value="most_nodes_prey">Follow: Most Nodes (Prey)</option>
+          <option value="most_nodes_pred">Follow: Most Nodes (Predator)</option>
+          <option value="most_layers">Follow: Most Layers (Any)</option>
+          <option value="most_layers_prey">Follow: Most Layers (Prey)</option>
+          <option value="most_layers_pred">Follow: Most Layers (Predator)</option>
+          <option value="most_conns">Follow: Most Connections</option>
+          <option value="brain_density">Follow: Brain Density (Any)</option>
+          <option value="brain_density_prey">Follow: Brain Density (Prey)</option>
+          <option value="brain_density_pred">Follow: Brain Density (Predator)</option>
+          <option value="latest_gen">Follow: Latest Generation (Any)</option>
+          <option value="latest_gen_prey">Follow: Latest Generation (Prey)</option>
+          <option value="latest_gen_pred">Follow: Latest Generation (Predator)</option>
+          <option value="fittest">Follow: Fittest (Any)</option>
+          <option value="fittest_prey">Follow: Fittest (Prey)</option>
+          <option value="fittest_pred">Follow: Fittest (Predator)</option>
+          <option value="most_children">Follow: Most Children</option>
+          <option value="most_kin">Follow: Most Kin Nearby</option>
+          <option value="fastest">Follow: Fastest</option>
+          <option value="youngest">Follow: Youngest</option>
+          <option value="oldest">Follow: Oldest</option>
+          <option value="none">Follow: None</option>
+        </select>
+        <button id="btnCull">☠ Cull weak</button>
+        <button id="btnSeed">🌱 Seed boost</button>
+      </div>
+
+      <div class="viewer">
+        <h3>Neural Network (live)</h3>
+        <canvas id="nnCanvas"></canvas>
+        <div class="legend">
+          <span class="chip"><span class="dot prey"></span>Prey</span>
+          <span class="chip"><span class="dot pred"></span>Predator</span>
+          <span class="chip"><span class="dot pos"></span>+ weight</span>
+          <span class="chip"><span class="dot neg"></span>- weight</span>
+        </div>
+        <div class="help">Click an agent to inspect. Outputs: Turn (−1..1), Thrust (0..1), Reproduce, Attack (predators).
+Inputs: bias, energy, speed, <b>food aggregate</b> (ux, uy, closeness, crowding), <b>kin aggregate</b> (ux, uy, closeness, crowding), then the top <b>4</b> nearest agents (for each: cosθ, sinθ, closeness, type {prey=+1, pred=−1}, kinPC {parent=+1, child=−1}, sib {same-parent=+1}), plus noise.</div>
+        <div class="small" id="selInfo"></div>
+        <div class="insights" id="selMore"></div>
+        <div class="row" id="brainIO" style="margin-top:8px">
+          <button id="btnSaveBrain">💾 Save brain</button>
+          <button id="btnLoadSelected">📥 Load → Selected</button>
+          <button id="btnLoadDefaultPrey">⭐ Default Prey</button>
+          <button id="btnLoadDefaultPred">⭐ Default Predator</button>
+          <input type="file" id="fileBrain" accept="application/json" style="display:none" />
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+// -------------------------- Utilities --------------------------
+var TAU = Math.PI * 2;
+var randf = function(a,b){ a=(a==null?0:a); b=(b==null?1:b); return a+Math.random()*(b-a); };
+var randi = function(a,b){ return Math.floor(randf(a,b)); };
+var clamp = function(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); };
+var lerp = function(a,b,t){ return a+(b-a)*t; };
+function wrap(v,max){return (v%max+max)%max}
+function dist2(ax,ay,bx,by){var dx=ax-bx, dy=ay-by; return dx*dx+dy*dy}
+function angleTo(ax,ay,bx,by){return Math.atan2(by-ay,bx-ax)}
+function rotWrap(a){while(a<-Math.PI)a+=TAU;while(a>Math.PI)a-=TAU;return a}
+function wrapDelta(ax,ay,bx,by){ var dx=bx-ax, dy=by-ay; var hw=Settings.worldW*0.5, hh=Settings.worldH*0.5; if(dx>hw) dx-=Settings.worldW; else if(dx<-hw) dx+=Settings.worldW; if(dy>hh) dy-=Settings.worldH; else if(dy<-hh) dy+=Settings.worldH; return [dx,dy]; }
+
+function gaussian(){ // Box-Muller
+  var u=0,v=0; while(u===0)u=Math.random(); while(v===0)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+var NEI_K = 4; // # of nearest agents encoded
+
+// -------------------------- Neural Network (feedforward, variable topology) --------------------------
+var _globalNodeId = 1, _globalConnId = 1, _globalAgentId = 1;
+function Node(kind, layer){
+  this.id = _globalNodeId++;
+  this.kind = kind; // 'in' | 'hid' | 'out'
+  this.layer = layer; // numeric for ordering; not necessarily integer
+  this.bias = randf(-0.2,0.2);
+  this.last = 0; // last activation, for drawing
+}
+function Conn(from,to,weight){
+  this.id = _globalConnId++;
+  this.from = from; this.to = to;
+  this.w = (weight==null?randf(-1,1):weight);
+  this.enabled = true;
+}
+function Brain(nIn, nOut){
+  this.inputs = []; this.hidden=[]; this.outputs=[]; this.conns=[];
+  var D = clamp(Math.round(Settings.initDepth||2), 2, 8); // total layers (>=2)
+  var hiddenLayers = Math.max(0, D-2);
+  for(var i=0;i<nIn;i++) this.inputs.push(new Node('in',0));
+  var perLayer = Math.max(2, Math.min(8, Math.round((nIn+nOut)/2)));
+  for(var l=0;l<hiddenLayers;l++){
+    for(var k=0;k<perLayer;k++) this.hidden.push(new Node('hid', l+1));
+  }
+  var outLayer = hiddenLayers+1;
+  for(var o=0;o<nOut;o++) this.outputs.push(new Node('out', outLayer));
+  var allByLayer = function(L){
+    var arr = [];
+    var all = [].concat(this.inputs, this.hidden, this.outputs);
+    for(var ai=0; ai<all.length; ai++){ if(all[ai].layer===L) arr.push(all[ai]); }
+    return arr;
+  }.bind(this);
+  for(var L=0; L<outLayer; L++){
+    var A = allByLayer(L), B = allByLayer(L+1);
+    for(var ai=0; ai<A.length; ai++){ for(var bi=0; bi<B.length; bi++){ this.conns.push(new Conn(A[ai].id,B[bi].id,randf(-0.6,0.6))); } }
+  }
+  if(hiddenLayers>0){
+    for(var t=0;t<Math.min(6, hiddenLayers*2);t++){
+      var a = this.inputs[randi(0,this.inputs.length)];
+      var b = this.outputs[randi(0,this.outputs.length)];
+      this.conns.push(new Conn(a.id,b.id,randf(-0.3,0.3)));
+    }
+  }
+  this._nodeMap = null; // cached id->node
+}
+Brain.prototype.clone = function(){
+  var b = Object.create(Brain.prototype);
+  b.inputs = this.inputs.map(function(n){ return Object.assign(new Node(n.kind,n.layer),JSON.parse(JSON.stringify(n))); });
+  b.hidden = this.hidden.map(function(n){ return Object.assign(new Node(n.kind,n.layer),JSON.parse(JSON.stringify(n))); });
+  b.outputs = this.outputs.map(function(n){ return Object.assign(new Node(n.kind,n.layer),JSON.parse(JSON.stringify(n))); });
+  var idMap = new Map();
+  var all = this.inputs.concat(this.hidden).concat(this.outputs);
+  var all2 = b.inputs.concat(b.hidden).concat(b.outputs);
+  for(var i=0;i<all.length;i++) idMap.set(all[i].id, all2[i].id);
+  b.conns = this.conns.map(function(c){ var cc=new Conn(idMap.get(c.from), idMap.get(c.to), c.w); cc.enabled=c.enabled; return cc; });
+  b._nodeMap = null;
+  return b;
+};
+Object.defineProperty(Brain.prototype, 'allNodes', { get:function(){ return this.inputs.concat(this.hidden).concat(this.outputs); } });
+Brain.prototype.nodeById = function(id){ if(!this._nodeMap){ this._nodeMap=new Map(this.allNodes.map(function(n){return [n.id,n];})); } return this._nodeMap.get(id); };
+Brain.prototype.layers = function(){
+  var layersSet = {};
+  var arr = this.allNodes.map(function(n){ return n.layer; });
+  for(var i=0;i<arr.length;i++) layersSet[arr[i]] = true;
+  var uniq=[]; for(var k in layersSet){ if(layersSet.hasOwnProperty(k)) uniq.push(Number(k)); }
+  uniq.sort(function(a,b){return a-b});
+  return uniq;
+};
+Brain.prototype.forward = function(inputVec){
+  for(var i=0;i<this.inputs.length;i++) this.inputs[i].last = (inputVec[i] == null ? 0 : inputVec[i]);
+  for(var hi=0;hi<this.hidden.length;hi++) this.hidden[hi].last=0; for(var oi=0;oi<this.outputs.length;oi++) this.outputs[oi].last=0;
+  var act = new Map();
+  var sum = new Map();
+  for(var ii=0;ii<this.inputs.length;ii++){ var nin=this.inputs[ii]; act.set(nin.id, nin.last); }
+  var Ls = this.layers();
+  for(var li=0; li<Ls.length; li++){
+    var L = Ls[li];
+    var nodes = this.allNodes;
+    for(var ni=0; ni<nodes.length; ni++){
+      var n = nodes[ni]; if(n.layer!==L) continue; if(n.kind==='in'){ act.set(n.id, n.last); continue; }
+      var s=(sum.get(n.id)||0)+n.bias; var a=Math.tanh(s); n.last=a; act.set(n.id,a);
+    }
+    for(var ci=0; ci<this.conns.length; ci++){
+      var c=this.conns[ci]; if(!c.enabled) continue; var fromNode=this.nodeById(c.from); var toNode=this.nodeById(c.to); if(fromNode.layer!==L) continue; if(toNode.layer<=L) continue; var src=act.get(c.from)||0; sum.set(c.to,(sum.get(c.to)||0)+src*c.w);
+    }
+  }
+  var out=[]; for(var oo=0; oo<this.outputs.length; oo++) out.push(this.outputs[oo].last); return out;
+};
+Brain.prototype.mutate = function(cfg){
+  if(Math.random()<cfg.mutWeight){ for(var i=0;i<this.conns.length;i++){ var c=this.conns[i]; if(Math.random()<0.3){ c.w += gaussian()*0.3; } else if(Math.random()<0.1){ c.w = randf(-1,1);} } }
+  if(Math.random()<cfg.mutAddConn){
+    var nodes = this.allNodes;
+    for(var tries=0;tries<20;tries++){
+      var a = nodes[randi(0,nodes.length)], b = nodes[randi(0,nodes.length)];
+      if(a.layer>=b.layer) continue; // avoid cycles
+      if(a.kind==='out') continue; if(b.kind==='in') continue;
+      var exists=false; for(var ci=0; ci<this.conns.length; ci++){ var cc=this.conns[ci]; if(cc.from===a.id && cc.to===b.id){ exists=true; break; } }
+      if(exists) continue;
+      this.conns.push(new Conn(a.id,b.id,randf(-1,1)));
+      break;
+    }
+  }
+  if(this.conns.length>1 && Math.random()<cfg.mutDelConn){ this.conns.splice(randi(0,this.conns.length),1); }
+  if(Math.random()<cfg.mutAddNode && this.conns.length){
+    var c = this.conns[randi(0,this.conns.length)]; if(!c.enabled) return; c.enabled=false;
+    var from = this.nodeById(c.from), to = this.nodeById(c.to);
+    var newLayer = 0.5*(from.layer + to.layer);
+    var n = new Node('hid', newLayer);
+    this.hidden.push(n); this._nodeMap=null;
+    var c1 = new Conn(from.id, n.id, 1.0);
+    var c2 = new Conn(n.id, to.id, c.w);
+    this.conns.push(c1,c2);
+    this._renormalizeLayers();
+  }
+  if(this.hidden.length && Math.random()<cfg.mutDelNode){
+    var idx = randi(0,this.hidden.length);
+    var n = this.hidden.splice(idx,1)[0];
+    var incoming = this.conns.filter(function(c){return c.to===n.id});
+    var outgoing = this.conns.filter(function(c){return c.from===n.id});
+    this.conns = this.conns.filter(function(c){return c.from!==n.id && c.to!==n.id});
+    if(incoming.length && outgoing.length && Math.random()<0.5){
+      var a = incoming[randi(0,incoming.length)], b = outgoing[randi(0,outgoing.length)];
+      var src=this.nodeById(a.from), dst=this.nodeById(b.to);
+      var dup=false; for(var ci=0; ci<this.conns.length; ci++){ var cc=this.conns[ci]; if(cc.from===src.id && cc.to===dst.id){dup=true;break;} }
+      if(src.layer<dst.layer && !dup){ this.conns.push(new Conn(src.id,dst.id,(a.w+b.w)*0.5)); }
+    }
+    this._renormalizeLayers();
+  }
+};
+Brain.prototype._renormalizeLayers = function(){
+  var nodes = this.allNodes;
+  var seen = {}; for(var i=0;i<nodes.length;i++) seen[nodes[i].layer]=true;
+  var uniq=[]; for(var k in seen){ if(seen.hasOwnProperty(k)) uniq.push(Number(k)); }
+  uniq.sort(function(a,b){return a-b});
+  var map={}; for(var i2=0;i2<uniq.length;i2++){ map[uniq[i2]] = i2; }
+  for(var j=0;j<nodes.length;j++){ var n=nodes[j]; if(n.kind==='in') n.layer=0; else if(n.kind==='out') n.layer=uniq.length-1; else n.layer = (map.hasOwnProperty(n.layer)?map[n.layer]:1); }
+  var maxL = -Infinity; for(var j2=0;j2<nodes.length;j2++){ if(nodes[j2].layer>maxL) maxL=nodes[j2].layer; }
+  for(var o=0;o<this.outputs.length;o++) this.outputs[o].layer=maxL;
+};
+
+// -------------------------- Agent & World --------------------------
+var TYPE_PREY='prey', TYPE_PRED='pred';
+var Settings = {
+  worldW: 1600, worldH: 1000,
+  preyMax: 120,
+  predMax: 25,
+  foodCount: 400,
+  foodRespawn: 2.0,
+  visionRadius: 180,
+  maxSpeed: 120,
+  turnRate: 5,
+  timescale: 1,
+  preyMet: 0.07,
+  predMet: 0.12,
+  moveCost: 0.10,
+  reproThresh: 24,
+  reproCooldown: 4,
+  foodEnergy: 6,
+  predEnergyGain: 22,
+  mutWeight: 0.6,
+  mutAddConn: 0.10,
+  mutDelConn: 0.02,
+  mutAddNode: 0.05,
+  mutDelNode: 0.01,
+  initDepth: 3,
+  predBaseDamage: 6,
+  mutColor: 12,
+  attackCooldown: 0.4,
+  preyHP: 18,
+  predHP: 30,
+  predEnergyPerDamage: 0.6,
+  killBonusEnergy: 8,
+  kinBitePenalty: 4,
+  kinKillPenalty: 10,
+  showVision: false,
+  showTrails: false,
+  showHeatPrey: false,
+  showHeatPred: false,
+  heatCell: 8,
+  heatmapDecay: 0.6,
+  heatmapIntensity: 1.0,
+  heatDeposit: 1.0,
+};
+
+function Food(x,y){ this.x=x; this.y=y; this.energy=Settings.foodEnergy; }
+
+function Agent(type,x,y,brain){
+  this.id = _globalAgentId++;
+  this.type = type; this.x=x; this.y=y; this.heading=randf(-Math.PI,Math.PI); this.speed=0;
+  this.energy = type===TYPE_PREY? 18: 28;
+  this.age=0; this.children=0; this.gen=0; this.cooldown=0; this.fitness=0; this.dead=false;
+  this.brain = brain || new Brain(Agent.inputsFor(type), Agent.outputsFor(type));
+  this.trail=[];
+  this.maxHP = (type===TYPE_PREY? Settings.preyHP : Settings.predHP);
+  this.hp = this.maxHP;
+  this.atkCd = 0; // attack cooldown
+  this.lastSense=[]; this.lastOut=[]; this.parentId=null;
+  var bh = (this.type===TYPE_PREY? 130 : 0) + randf(-20,20);
+  this.h = ((bh%360)+360)%360; this.s = clamp(70 + randi(-10,10), 35, 100); this.l = clamp(55 + randi(-10,10), 30, 75);
+}
+Agent.inputsFor = function(type){ return 3 + 4 + 4 + NEI_K*6 + 1; };
+Agent.outputsFor = function(type){ return type===TYPE_PRED? 4 : 3; };
+Agent.prototype.sense = function(world){
+  var vision = Settings.visionRadius; var r2 = vision*vision; var self=this;
+  function aggregateFood(list){
+    var sx=0, sy=0, cnt=0, minD=1e9;
+    for(var i=0;i<list.length;i++){
+      var it=list[i]; var dxy=wrapDelta(self.x,self.y,it.x,it.y); var dx=dxy[0], dy=dxy[1];
+      var d2=dx*dx+dy*dy; if(d2>r2) continue; var d=Math.sqrt(d2); if(d<minD) minD=d;
+      var rel=rotWrap(Math.atan2(dy,dx)-self.heading); sx+=Math.cos(rel); sy+=Math.sin(rel); cnt++;
+    }
+    var ux=0,uy=0,close=0,crowd=0; if(cnt>0){ ux=sx/cnt; uy=sy/cnt; close=1-(minD/vision); }
+    crowd = clamp(cnt/30,0,1); return [ux,uy,close,crowd];
+  }
+  var neighbors=[]; // combine prey(+1) and preds(-1)
+  function pushAgents(list, typeCode){
+    for(var i=0;i<list.length;i++){
+      var it=list[i]; if(!it || it.dead || it===self) continue;
+      var dxy=wrapDelta(self.x,self.y,it.x,it.y); var dx=dxy[0], dy=dxy[1];
+      var d2=dx*dx+dy*dy; if(d2>r2 || d2===0) continue; var d=Math.sqrt(d2);
+      var rel=rotWrap(Math.atan2(dy,dx)-self.heading);
+      var isParent = (it.id===self.parentId), isChild = (it.parentId===self.id);
+      var isSibling = (!!self.parentId && !!it.parentId && self.parentId===it.parentId);
+      var kin = isParent?1:(isChild?-1:0);
+      neighbors.push({d:d, ux:Math.cos(rel), uy:Math.sin(rel), close:1-(d/vision), t:typeCode, kin:kin, sib:(isSibling?1:0)});
+    }
+  }
+  pushAgents(world.prey, +1);
+  pushAgents(world.preds, -1);
+  neighbors.sort(function(a,b){ return a.d-b.d; });
+
+  // Aggregates
+  var base = [1, clamp(this.energy/40,0,1), clamp(this.speed/Settings.maxSpeed,0,1)];
+  var fAgg = aggregateFood(world.food);
+  var kSx=0,kSy=0,kCnt=0,kMin=1e9; for(var ni=0; ni<neighbors.length; ni++){ var nb=neighbors[ni]; if(nb.kin!==0 || nb.sib===1){ kCnt++; if(nb.d<kMin) kMin=nb.d; kSx+=nb.ux; kSy+=nb.uy; } }
+  var kUx=0,kUy=0,kClose=0,kCrowd=0; if(kCnt>0){ kUx=kSx/kCnt; kUy=kSy/kCnt; kClose=1-(kMin/vision); kCrowd=clamp(kCnt/20,0,1); }
+  var kinAgg=[kUx,kUy,kClose,kCrowd];
+
+  var inputs = base.concat(fAgg, kinAgg);
+  for(var k=0;k<NEI_K;k++){
+    var n = neighbors[k];
+    if(n){ inputs.push(n.ux, n.uy, n.close, n.t, n.kin, n.sib); }
+    else { inputs.push(0,0,0,0,0,0); }
+  }
+  inputs.push(randf(-1,1));
+  return inputs;
+};
+Agent.prototype.update = function(dt, world){
+  if(this.dead) return;
+  var inp = this.sense(world);
+  var out = this.brain.forward(inp);
+  this.lastSense = inp.slice(); this.lastOut = out.slice();
+  var turn = clamp(out[0],-1,1);
+  var thrust = clamp(out[1],0,1);
+  var reproduceSignal = out[2];
+
+  var maxTurn = Settings.turnRate*dt; this.heading = rotWrap(this.heading + maxTurn*turn);
+  var accel = 120*thrust; this.speed = clamp(this.speed + accel*dt - 0.8*this.speed*dt, 0, Settings.maxSpeed);
+  var vx = Math.cos(this.heading)*this.speed*dt; var vy = Math.sin(this.heading)*this.speed*dt;
+  this.x = wrap(this.x + vx, Settings.worldW); this.y = wrap(this.y + vy, Settings.worldH);
+
+  var met = (this.type===TYPE_PREY?Settings.preyMet:Settings.predMet);
+  this.energy -= met*dt + Settings.moveCost*thrust*dt;
+  this.age += dt; this.cooldown = Math.max(0,this.cooldown-dt);
+
+  if(this.type===TYPE_PREY){
+    for(var i=world.food.length-1;i>=0;i--){ var f=world.food[i]; if(dist2(this.x,this.y,f.x,f.y)< 12*12){ this.energy += f.energy; world.food.splice(i,1); world.statFoodEaten++; if(world.food.length<Settings.foodCount) world.spawnFood(1); break; } }
+  } else {
+    this.atkCd = Math.max(0,this.atkCd - dt);
+    var attackOut = this.brain.outputs[3]? this.brain.outputs[3].last : 0; // [-1,1]
+    var bite = clamp((attackOut+1)/2, 0, 1); // 0..1
+    var canBite = this.atkCd<=0 && bite>0.2;
+    var tryHit = function(victim, radius){
+      if(!victim || victim.dead) return false; if(dist2(this.x,this.y,victim.x,victim.y) > radius*radius) return false;
+      if(!canBite) return false; var dmg = Settings.predBaseDamage * bite; victim.hp -= dmg;
+      var isKinPC = (victim.id===this.parentId || victim.parentId===this.id);
+      var isSibling = (!!this.parentId && !!victim.parentId && this.parentId===victim.parentId);
+      var penalize = isKinPC || isSibling;
+      this.energy += dmg*Settings.predEnergyPerDamage; if(penalize){ this.energy -= Settings.kinBitePenalty * bite; }
+      this.atkCd = Settings.attackCooldown; if(victim.hp<=0){ victim.dead=true; this.energy += Settings.killBonusEnergy; if(penalize){ this.energy -= Settings.kinKillPenalty; } if(victim.type===TYPE_PREY) world.statPreyEaten++; }
+      return true;
+    }.bind(this);
+    var hit=false; for(var qi=0; qi<world.prey.length; qi++){ if(tryHit(world.prey[qi],14)){ hit=true; break; } }
+    if(!hit){ for(var pj=0; pj<world.preds.length; pj++){ var other=world.preds[pj]; if(other===this) continue; if(tryHit(other,16)){ hit=true; break; } } }
+  }
+
+  if(this.energy>Settings.reproThresh && this.cooldown<=0 && reproduceSignal>0.4){
+    this.energy *= 0.5; this.cooldown = Settings.reproCooldown; this.children++;
+    var child = this.spawnChild(); if(world.addAgent(child)) world.approxGen++;
+  }
+
+  if(this.energy<=0 || this.hp<=0) { this.dead=true; return; }
+  this.fitness += (this.type===TYPE_PREY? 0.3:0.2)*dt + 0.05*this.speed*dt;
+
+  if(Settings.showTrails){ this.trail.push([this.x,this.y]); if(this.trail.length>40) this.trail.shift(); }
+};
+Agent.prototype.spawnChild = function(){
+  var child = new Agent(this.type, wrap(this.x+randf(-12,12),Settings.worldW), wrap(this.y+randf(-12,12),Settings.worldH), this.brain.clone());
+  child.heading = this.heading + randf(-0.4,0.4); child.energy = this.energy; child.speed=0; child.age=0; child.children=0; child.parentId=this.id; child.gen=this.gen+1; child.cooldown = Settings.reproCooldown;
+  child.brain.mutate({
+    mutWeight: Settings.mutWeight,
+    mutAddConn: Settings.mutAddConn,
+    mutDelConn: Settings.mutDelConn,
+    mutAddNode: Settings.mutAddNode,
+    mutDelNode: Settings.mutDelNode,
+  });
+  // heritable color trait with mutation
+  child.h = ((this.h + gaussian()*Settings.mutColor)%360+360)%360;
+  child.s = clamp(this.s + gaussian()*(Settings.mutColor*0.25), 35, 100);
+  child.l = clamp(this.l + gaussian()*(Settings.mutColor*0.20), 30, 75);
+  return child;
+};
+
+function World(){
+  this.prey=[]; this.preds=[]; this.food=[]; this.time=0;
+  this.statFoodEaten=0; this.statPreyEaten=0; this.approxGen=0; this.bestPrey=null; this.bestPred=null;
+  this.selected=null;
+  this.initHeat();
+}
+World.prototype.addAgent = function(a){
+  if(a.type===TYPE_PREY){ if(this.prey.length>=Settings.preyMax) return false; this.prey.push(a); return true; }
+  else { if(this.preds.length>=Settings.predMax) return false; this.preds.push(a); return true; }
+};
+World.prototype.seed = function(){
+  // clear and repopulate
+  this.prey=[]; this.preds=[]; this.food=[];
+  for(var i=0;i<Settings.foodCount;i++) this.food.push(new Food(randf(0,Settings.worldW), randf(0,Settings.worldH)));
+  var nPrey = Math.min(Settings.preyMax, Math.max(10, Math.floor(Settings.preyMax*0.5)));
+  var nPred = Math.min(Settings.predMax, Math.max(2, Math.floor(Settings.predMax*0.5)));
+  for(var a=0;a<nPrey;a++) this.addAgent(new Agent(TYPE_PREY, randf(0,Settings.worldW), randf(0,Settings.worldH), DefaultBrains.prey? Brain.fromJSON(DefaultBrains.prey, Agent.inputsFor(TYPE_PREY), Agent.outputsFor(TYPE_PREY)) : undefined));
+  for(var b=0;b<nPred;b++) this.addAgent(new Agent(TYPE_PRED, randf(0,Settings.worldW), randf(0,Settings.worldH), DefaultBrains.pred? Brain.fromJSON(DefaultBrains.pred, Agent.inputsFor(TYPE_PRED), Agent.outputsFor(TYPE_PRED)) : undefined));
+  this.resetHeat();
+  this.time=0; this.statFoodEaten=0; this.statPreyEaten=0; this.approxGen=0; this.selected=null; this.bestPrey=null; this.bestPred=null;
+};
+World.prototype.spawnFood = function(n){ for(var i=0;i<n;i++) this.food.push(new Food(randf(0,Settings.worldW), randf(0,Settings.worldH))); };
+
+World.prototype.initHeat = function(){
+  this.hmCell = Settings.heatCell;
+  this.hmCols = Math.max(2, Math.floor(Settings.worldW / this.hmCell));
+  this.hmRows = Math.max(2, Math.floor(Settings.worldH / this.hmCell));
+  var n = this.hmCols * this.hmRows;
+  this.heatPrey = new Float32Array(n);
+  this.heatPred = new Float32Array(n);
+  this.hmPreyCanvas = document.createElement('canvas'); this.hmPreyCanvas.width=this.hmCols; this.hmPreyCanvas.height=this.hmRows; this.hmPreyCtx=this.hmPreyCanvas.getContext('2d');
+  this.hmPredCanvas = document.createElement('canvas'); this.hmPredCanvas.width=this.hmCols; this.hmPredCanvas.height=this.hmRows; this.hmPredCtx=this.hmPredCanvas.getContext('2d');
+  this.hmDirty = true;
+};
+World.prototype.resetHeat = function(){ if(this.heatPrey) this.heatPrey.fill(0); if(this.heatPred) this.heatPred.fill(0); this.hmDirty=true; };
+World.prototype.hmIndex = function(x,y){ var ix=Math.floor(wrap(x,Settings.worldW)/this.hmCell)%this.hmCols; var iy=Math.floor(wrap(y,Settings.worldH)/this.hmCell)%this.hmRows; return iy*this.hmCols + ix; };
+World.prototype.updateHeat = function(dt){
+  var retain = Math.exp(-Settings.heatmapDecay * dt);
+  var hp=this.heatPrey, hd=this.heatPred; for(var i=0;i<hp.length;i++){ hp[i]*=retain; hd[i]*=retain; }
+  var dep = Settings.heatDeposit * dt;
+  for(var i2=0;i2<this.prey.length;i2++){ var a=this.prey[i2]; hp[this.hmIndex(a.x,a.y)] += dep; }
+  for(var j2=0;j2<this.preds.length;j2++){ var b=this.preds[j2]; hd[this.hmIndex(b.x,b.y)] += dep; }
+  this.hmDirty=true;
+};
+World.prototype.renderHeatmaps = function(ctx, camX, camY, W, H){
+  if(!Settings.showHeatPrey && !Settings.showHeatPred) return;
+  var cols=this.hmCols, rows=this.hmRows, cell=this.hmCell;
+  function paint(ctx2, arr, color){
+    var img = ctx2.createImageData(cols, rows); var d=img.data; var r=color[0], g=color[1], b=color[2];
+    for(var i=0, p=0; i<arr.length; i++, p+=4){ var v = arr[i]*Settings.heatmapIntensity; if(v>1) v=1; if(v<0) v=0; var a = Math.floor(255*Math.sqrt(v)); d[p]=r; d[p+1]=g; d[p+2]=b; d[p+3]=a; }
+    ctx2.putImageData(img,0,0);
+  }
+  if(this.hmDirty){
+    if(Settings.showHeatPrey) paint(this.hmPreyCtx, this.heatPrey, [134,239,172]);
+    if(Settings.showHeatPred) paint(this.hmPredCtx, this.heatPred, [252,165,165]);
+    this.hmDirty=false;
+  }
+  ctx.save(); ctx.imageSmoothingEnabled=true; ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.9;
+  var dxs=[0,-Settings.worldW, Settings.worldW]; var dys=[0,-Settings.worldH, Settings.worldH];
+  if(Settings.showHeatPrey){ for(var ix=0; ix<dxs.length; ix++){ for(var iy=0; iy<dys.length; iy++){ ctx.drawImage(this.hmPreyCanvas, -camX+dxs[ix], -camY+dys[iy], cols*cell, rows*cell); } } }
+  if(Settings.showHeatPred){ for(var jx=0; jx<dxs.length; jx++){ for(var jy=0; jy<dys.length; jy++){ ctx.drawImage(this.hmPredCanvas, -camX+dxs[jx], -camY+dys[jy], cols*cell, rows*cell); } } }
+  ctx.restore();
+};
+World.prototype.step = function(dt){
+  this.time += dt;
+  for(var i=0;i<this.prey.length;i++) this.prey[i].update(dt,this);
+  for(var j=0;j<this.preds.length;j++) this.preds[j].update(dt,this);
+  this.prey = this.prey.filter(function(a){return !a.dead}); this.preds = this.preds.filter(function(a){return !a.dead});
+
+  // Heatmap decay & deposit
+  this.updateHeat(dt);
+
+  if(this.prey.length<Settings.preyMax && Math.random()<0.02){ var mom=this.bestOf(this.prey)||null; var b = mom? mom.spawnChild() : new Agent(TYPE_PREY, randf(0,Settings.worldW), randf(0,Settings.worldH), DefaultBrains.prey? Brain.fromJSON(DefaultBrains.prey, Agent.inputsFor(TYPE_PREY), Agent.outputsFor(TYPE_PREY)) : undefined); if(this.addAgent(b)) this.approxGen++; }
+  if(this.preds.length<Settings.predMax && Math.random()<0.01){ var mom2=this.bestOf(this.preds)||null; var b3 = mom2? mom2.spawnChild() : new Agent(TYPE_PRED, randf(0,Settings.worldW), randf(0,Settings.worldH), DefaultBrains.pred? Brain.fromJSON(DefaultBrains.pred, Agent.inputsFor(TYPE_PRED), Agent.outputsFor(TYPE_PRED)) : undefined); if(this.addAgent(b3)) this.approxGen++; }
+
+  var need = Settings.foodCount - this.food.length;
+  var spawn = Math.max(0, Math.min(need, Math.floor(Settings.foodRespawn*dt + (Math.random()< (Settings.foodRespawn*dt)%1 ? 1:0))));
+  if(spawn>0) this.spawnFood(spawn);
+
+  this.bestPrey = this.bestOf(this.prey); this.bestPred = this.bestOf(this.preds);
+  if(this.selected && this.selected.dead) this.selected=null;
+};
+World.prototype.bestOf = function(list){ var best=null, f=-Infinity; for(var i=0;i<list.length;i++){ var a=list[i]; if(a.fitness>f){f=a.fitness; best=a;} } return best; };
+
+// -------------------------- Rendering --------------------------
+var sim = document.getElementById('sim');
+var ctx = sim.getContext('2d');
+var nnCanvas = document.getElementById('nnCanvas'); var nnCtx = nnCanvas.getContext('2d');
+function resizeNN(){ var dpr=window.devicePixelRatio||1; var cw=nnCanvas.clientWidth||320; var ch=nnCanvas.clientHeight||300; var w=Math.max(1,Math.floor(cw*dpr)), h=Math.max(1,Math.floor(ch*dpr)); if(nnCanvas.width!==w||nnCanvas.height!==h){ nnCanvas.width=w; nnCanvas.height=h; nnCtx.setTransform(dpr,0,0,dpr,0,0);} }
+window.addEventListener('resize', resizeNN);
+function resize(){ var dpr = window.devicePixelRatio||1; sim.width=sim.clientWidth*dpr; sim.height=sim.clientHeight*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); }
+window.addEventListener('resize', resize);
+
+var world = new World();
+var DefaultBrains = {prey:null, pred:null};
+
+function getFollowTarget(){
+  var mode = document.getElementById('selFollow').value;
+  var all = world.prey.concat(world.preds);
+  if(mode==='selected') return world.selected;
+  if(mode==='none') return null;
+  function pick(list, score){ var best=null, bestV=-Infinity; for(var i=0;i<list.length;i++){ var a=list[i]; var v=score(a); if(v>bestV){bestV=v; best=a;} } return best; }
+  function brainDensity(a){ var n=a.brain.allNodes.length||1; return a.brain.conns.length / n; }
+  function kinCrowd(a){ var v=a.lastSense||[]; return v.length>=11 ? v[10] : 0; } // kin aggregate crowding index
+  function outActivity(a){ var o=a.lastOut||[]; var s=0; for(var i=0;i<o.length;i++) s+=Math.abs(o[i]); return s; }
+  switch(mode){
+    case 'best_prey': return world.bestPrey;
+    case 'best_pred': return world.bestPred;
+    case 'most_nodes': return pick(all, function(a){return a.brain.allNodes.length;});
+    case 'most_nodes_prey': return pick(world.prey, function(a){return a.brain.allNodes.length;});
+    case 'most_nodes_pred': return pick(world.preds, function(a){return a.brain.allNodes.length;});
+    case 'most_layers': return pick(all, function(a){return a.brain.layers().length;});
+    case 'most_layers_prey': return pick(world.prey, function(a){return a.brain.layers().length;});
+    case 'most_layers_pred': return pick(world.preds, function(a){return a.brain.layers().length;});
+    case 'most_conns': return pick(all, function(a){return a.brain.conns.length;});
+    case 'brain_density': return pick(all, brainDensity);
+    case 'brain_density_prey': return pick(world.prey, brainDensity);
+    case 'brain_density_pred': return pick(world.preds, brainDensity);
+    case 'latest_gen': return pick(all, function(a){return a.gen;});
+    case 'latest_gen_prey': return pick(world.prey, function(a){return a.gen;});
+    case 'latest_gen_pred': return pick(world.preds, function(a){return a.gen;});
+    case 'fittest': return pick(all, function(a){return a.fitness;});
+    case 'fittest_prey': return pick(world.prey, function(a){return a.fitness;});
+    case 'fittest_pred': return pick(world.preds, function(a){return a.fitness;});
+    case 'most_children': return pick(all, function(a){return a.children;});
+    case 'most_kin': return pick(all, kinCrowd);
+    case 'fastest': return pick(all, function(a){return a.speed;});
+    case 'youngest': return pick(all, function(a){return -a.age;});
+    case 'oldest': return pick(all, function(a){return a.age;});
+  }
+  return null;
+}
+
+function draw(){
+  var W = sim.clientWidth, H = sim.clientHeight; ctx.clearRect(0,0,W,H);
+  var camX=0, camY=0;
+  var followMode = document.getElementById('selFollow').value;
+  var target = getFollowTarget();
+  if(target && followMode!=='none'){ camX = target.x - W/2; camY = target.y - H/2; }
+  else if(document.getElementById('lockCameraOnSelected').checked && world.selected){ camX = world.selected.x - W/2; camY = world.selected.y - H/2; }
+  var wrapDraw=function(x,y){ return [wrap(x-camX, Settings.worldW), wrap(y-camY, Settings.worldH)]; };
+
+  // heatmaps (draw under agents/food)
+  world.renderHeatmaps(ctx, camX, camY, W, H);
+
+  // food
+  ctx.fillStyle = 'rgba(125,211,252,0.9)';
+  for(var fi=0; fi<world.food.length; fi++){ var f=world.food[fi]; var p=wrapDraw(f.x,f.y); ctx.beginPath(); ctx.arc(p[0],p[1],3,0,TAU); ctx.fill(); }
+
+  // trails
+  if(Settings.showTrails){
+    ctx.strokeStyle = 'rgba(148,163,184,0.3)'; ctx.lineWidth=1;
+    var allA = world.prey.concat(world.preds);
+    for(var ai=0; ai<allA.length; ai++){
+      var aT=allA[ai]; var pts=aT.trail; if(!pts || pts.length<2) continue;
+      // Unwrap the trail in world space to avoid wrap-jump artifacts
+      var ux=pts[0][0], uy=pts[0][1]; var prev=pts[0];
+      ctx.beginPath(); ctx.moveTo(ux - camX, uy - camY);
+      for(var ti=1; ti<pts.length; ti++){
+        var t=pts[ti]; var d=wrapDelta(prev[0], prev[1], t[0], t[1]); ux+=d[0]; uy+=d[1]; ctx.lineTo(ux - camX, uy - camY); prev=t;
+      }
+      ctx.stroke();
+    }
+  }
+
+  // agents
+  for(var i1=0;i1<world.prey.length;i1++){ drawAgent(world.prey[i1]); }
+  for(var i2=0;i2<world.preds.length;i2++){ drawAgent(world.preds[i2]); }
+
+  function drawAgent(a){
+    var p=wrapDraw(a.x,a.y); var x=p[0], y=p[1]; var r = a.type===TYPE_PREY?6.5:8; var h=a.heading;
+    if(Settings.showVision){ ctx.beginPath(); ctx.arc(x,y,Settings.visionRadius,0,TAU); ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=1; ctx.stroke(); }
+    var fill='hsl('+Math.round(a.h)+','+Math.round(a.s)+'%,'+Math.round(a.l)+'%)';
+    var stroke='hsl('+Math.round(a.h)+','+Math.max(30,Math.round(a.s-20))+'%,'+Math.max(10,Math.round(a.l-25))+'%)';
+    ctx.save(); ctx.translate(x,y); ctx.rotate(h);
+    ctx.beginPath();
+    if(a.type===TYPE_PREY){
+      // leaf / teardrop shape
+      ctx.moveTo(r,0);
+      ctx.quadraticCurveTo(-r, r*0.9, -r, 0);
+      ctx.quadraticCurveTo(-r, -r*0.9, r, 0);
+      ctx.closePath();
+    } else {
+      // predator wedge / spearhead
+      ctx.moveTo(r,0);
+      ctx.lineTo(-r*0.95, r*0.55);
+      ctx.lineTo(-r*0.3,0);
+      ctx.lineTo(-r*0.95, -r*0.55);
+      ctx.closePath();
+    }
+    ctx.fillStyle = fill; ctx.strokeStyle=stroke; ctx.lineWidth=1.6; ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    if(world.selected===a){ ctx.beginPath(); ctx.arc(x,y, r+4, 0, TAU); ctx.strokeStyle='#e5e7eb'; ctx.lineWidth=1.2; ctx.stroke(); }
+  }
+}
+
+function drawNN(agent){
+  var w=nnCanvas.clientWidth, h=nnCanvas.clientHeight; nnCtx.clearRect(0,0,w,h);
+  if(!agent){ nnCtx.fillStyle='#94a3b8'; nnCtx.fillText('No agent selected', 10, 16); return; }
+  var brain = agent.brain;
+  var layers = brain.layers();
+  var nodesByLayer = new Map();
+  for(var li=0; li<layers.length; li++) nodesByLayer.set(layers[li], []);
+  var all=brain.allNodes; for(var ni=0; ni<all.length; ni++){ var n=all[ni]; nodesByLayer.get(n.layer).push(n); }
+  var pad=16; var innerW=w-pad*2, innerH=h-pad*2; var Lc=layers.length;
+  var pos = new Map();
+  for(var ix=0; ix<layers.length; ix++){
+    var L=layers[ix]; var nodes = nodesByLayer.get(L).slice().sort(function(a,b){return a.id-b.id});
+    var x = pad + (Lc<=1?innerW/2 : ix/(Lc-1)*innerW);
+    var step = innerH/Math.max(1,nodes.length);
+    for(var i=0;i<nodes.length;i++){
+      var y = pad + (i+0.5)*step;
+      pos.set(nodes[i].id, [x,y]);
+    }
+  }
+  for(var ci=0; ci<brain.conns.length; ci++){ var c=brain.conns[ci]; if(!c.enabled) continue; var a=brain.nodeById(c.from), b=brain.nodeById(c.to); var p1=pos.get(a.id), p2=pos.get(b.id); if(!p1||!p2) continue;
+    var wgh = clamp(Math.abs(c.w),0,2); nnCtx.strokeStyle = c.w>=0?('rgba(96,165,250,'+(0.2+0.6*Math.min(1,wgh/1.5))+')'):('rgba(244,114,182,'+(0.2+0.6*Math.min(1,wgh/1.5))+')');
+    nnCtx.lineWidth = 1 + Math.min(3,Math.abs(c.w));
+    nnCtx.beginPath();
+    var cx=(p1[0]+p2[0])/2, cy=(p1[1]+p2[1])/2; var curve=((p2[0]-p1[0])||1)*0.16;
+    nnCtx.moveTo(p1[0]+10,p1[1]);
+    nnCtx.quadraticCurveTo(cx, cy-curve, p2[0]-10, p2[1]);
+    nnCtx.stroke();
+  }
+  var allN=brain.allNodes;
+  for(var ni2=0; ni2<allN.length; ni2++){
+    var n2=allN[ni2]; var p=pos.get(n2.id); if(!p) continue;
+    nnCtx.fillStyle = n2.kind==='in'?('rgba(148,163,184,0.9)') : n2.kind==='out'?('rgba(236,253,245,0.95)'):('rgba(203,213,225,0.9)');
+    var r = 7 + (n2.kind==='out'?1.5:0);
+    nnCtx.beginPath(); nnCtx.arc(p[0],p[1], r+4,0,TAU); nnCtx.strokeStyle=('rgba(125,211,252,'+(0.1+0.7*clamp(Math.abs(n2.last),0,1))+')'); nnCtx.lineWidth=2; nnCtx.stroke();
+    nnCtx.beginPath(); nnCtx.arc(p[0],p[1], r,0,TAU); nnCtx.fill(); nnCtx.strokeStyle='#00000055'; nnCtx.stroke();
+  }
+  // Labels LAST so they're on top
+  var labels = (agent.type==='pred'? ['turn','thrust','repr','atk'] : ['turn','thrust','repr']);
+  nnCtx.font='11px system-ui'; nnCtx.textBaseline='top'; nnCtx.textAlign='left';
+  for(var li=0; li<brain.outputs.length && li<labels.length; li++){
+    var on=brain.outputs[li]; var p=pos.get(on.id); if(!p) continue;
+    var txt=labels[li];
+    var wtxt=nnCtx.measureText(txt).width; var textH=12; var rOut=8.5;
+    var x0 = p[0] - wtxt/2; x0 = Math.max(2, Math.min(w - wtxt - 2, x0));
+    var y0 = p[1] + rOut + 6; if(y0 + textH > h - 4) y0 = p[1] - rOut - 6 - textH; // flip above if near bottom
+    nnCtx.fillStyle='rgba(2,6,23,0.6)'; nnCtx.fillRect(x0-2, y0-1, wtxt+4, textH+2);
+    nnCtx.fillStyle='#cbd5e1'; nnCtx.fillText(txt, x0, y0);
+  }
+  // Header line
+  nnCtx.fillStyle='#94a3b8'; nnCtx.textBaseline='alphabetic';
+  nnCtx.fillText(agent.type.toUpperCase()+" #"+agent.id+" | gen:"+agent.gen+" | nodes:"+brain.allNodes.length+" conns:"+brain.conns.length, 8, 16);
+}
+
+// -------------------------- Brain I/O --------------------------
+function download(filename, text){ var blob=new Blob([text],{type:'application/json'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 0); }
+Brain.prototype.toJSON = function(agentType){ return {version:1, agentType:agentType, inputs:this.inputs.length, outputs:this.outputs.length, nodes:this.allNodes.map(function(n){return {id:n.id,kind:n.kind,layer:n.layer,bias:n.bias}}), conns:this.conns.map(function(c){return {from:c.from,to:c.to,w:c.w,enabled:c.enabled}})}; };
+Brain.fromJSON = function(data, reqIn, reqOut){ var b=Object.create(Brain.prototype); b.inputs=[]; b.hidden=[]; b.outputs=[]; b.conns=[]; var nodeMap=new Map(); var nodes=(data&&data.nodes)||[]; for(var i=0;i<nodes.length;i++){ var nd=nodes[i]; var n=new Node(nd.kind, nd.layer); n.bias=Number(nd.bias)||0; n.id = Number(nd.id)||n.id; if(n.kind==='in') b.inputs.push(n); else if(n.kind==='out') b.outputs.push(n); else b.hidden.push(n); nodeMap.set(n.id,n); }
+  // adjust inputs
+  if(b.inputs.length!==reqIn){ for(var ii=0;ii<b.inputs.length;ii++){ nodeMap.delete(b.inputs[ii].id); } b.inputs.length=0; for(var j=0;j<reqIn;j++){ var n2=new Node('in',0); nodeMap.set(n2.id,n2); b.inputs.push(n2);} }
+  // adjust outputs
+  var outLayer = b.outputs.length? Math.max.apply(null,b.outputs.map(function(n){return n.layer})) : (Math.max.apply(null,[0].concat(b.hidden.map(function(n){return n.layer})).concat([0]))+1);
+  if(b.outputs.length>reqOut){ var extras=b.outputs.splice(reqOut); for(var ei=0;ei<extras.length;ei++){ nodeMap.delete(extras[ei].id); } }
+  else if(b.outputs.length<reqOut){ for(var oi=0;oi<reqOut-b.outputs.length;oi++){ var no=new Node('out', outLayer); nodeMap.set(no.id,no); b.outputs.push(no);} }
+  // rebuild connections
+  var conns=(data&&data.conns)||[]; for(var ci=0; ci<conns.length; ci++){ var c=conns[ci]; var from=nodeMap.get(c.from), to=nodeMap.get(c.to); if(!from||!to) continue; var cc=new Conn(from.id,to.id,Number(c.w)||0); cc.enabled=!!c.enabled; b.conns.push(cc); }
+  b._nodeMap=null; var mx=0; var allnodes=b.inputs.concat(b.hidden).concat(b.outputs); for(var ai=0; ai<allnodes.length; ai++){ if(allnodes[ai].id>mx) mx=allnodes[ai].id; } _globalNodeId=Math.max(_globalNodeId,mx+1); return b; };
+function toast(msg,ms){ ms=(ms==null?2200:ms); var h=document.getElementById('hud'); var prev=h.textContent; h.textContent=msg; setTimeout(function(){ if(h.textContent===msg) h.textContent=prev; }, ms); }
+
+// -------------------------- UI & Loop --------------------------
+var ctrlDefs = [
+  ['preyMax', 'preyMax'], ['predMax','predMax'], ['foodCount','foodCount'], ['foodRespawn','foodRespawn'],
+  ['preyMet','preyMet'], ['predMet','predMet'], ['moveCost','moveCost'], ['reproThresh','reproThresh'], ['reproCooldown','reproCooldown'], ['foodEnergy','foodEnergy'], ['predEnergyGain','predEnergyGain'],
+  ['visionRadius','visionRadius'], ['maxSpeed','maxSpeed'], ['turnRate','turnRate'], ['timescale','timescale'],
+  ['mutWeight','mutWeight'], ['mutAddConn','mutAddConn'], ['mutDelConn','mutDelConn'], ['mutAddNode','mutAddNode'], ['mutDelNode','mutDelNode'],
+  ['initDepth','initDepth'], ['predBaseDamage','predBaseDamage'], ['mutColor','mutColor'],
+  ['heatDecay','heatDecay'], ['heatIntensity','heatIntensity']
+];
+var checkDefs = [ ['showVision','showVision'], ['showTrails','showTrails'], ['lockCameraOnSelected','lockCameraOnSelected'], ['showHeatPrey','showHeatPrey'], ['showHeatPred','showHeatPred'] ];
+function initControls(){
+  for(var i=0;i<ctrlDefs.length;i++){ (function(){ var pair=ctrlDefs[i]; var id=pair[0], key=pair[1]; var el=document.getElementById(id); if(!el){ console.warn('Missing control element:', id); return; } el.value=Settings[key]; var valEl=document.querySelector('.val[data-for="'+id+'"]'); if(valEl){ var fmt=function(v){ return (typeof Settings[key]==='number' && Math.abs(Settings[key])<1 && !Number.isInteger(Settings[key]))? Number(v).toFixed(2) : v; }; valEl.textContent = fmt(el.value); el.addEventListener('input', function(){ Settings[key] = Number(el.value); valEl.textContent = fmt(el.value); if(key==='foodEnergy') world.food.forEach(function(f){f.energy=Settings.foodEnergy}); }); } })(); }
+  for(var j=0;j<checkDefs.length;j++){ (function(){ var pair=checkDefs[j]; var id=pair[0], key=pair[1]; var el=document.getElementById(id); if(!el){ console.warn('Missing checkbox element:', id); return; } el.checked = Settings[key]; el.addEventListener('change',function(){Settings[key]=el.checked}); })(); }
+}
+
+function updateStats(dt, fps){
+  document.getElementById('statPrey').textContent = ''+world.prey.length;
+  document.getElementById('statPred').textContent = ''+world.preds.length;
+  document.getElementById('statFood').textContent = ''+world.food.length;
+  document.getElementById('statGen').textContent = ''+world.approxGen;
+  var all=world.prey.concat(world.preds); var sum=0; for(var i=0;i<all.length;i++) sum+=all[i].brain.allNodes.length; var avgNN = all.length? (sum/all.length).toFixed(1):0; document.getElementById('statNN').textContent = avgNN;
+  document.getElementById('statFPS').textContent = ''+fps.toFixed(0);
+}
+
+function hitTestAgent(mx,my){
+  var best=null, bd=16*16;
+  var all=world.prey.concat(world.preds);
+  for(var i=0;i<all.length;i++){ var a=all[i]; var d2=dist2(mx,my,a.x,a.y); if(d2<bd){bd=d2; best=a;} }
+  return best;
+}
+
+sim.addEventListener('click', function(e){
+  var rect=sim.getBoundingClientRect(); var dpr=window.devicePixelRatio||1; var mx=(e.clientX-rect.left)*dpr; var my=(e.clientY-rect.top)*dpr;
+  var a = hitTestAgent(mx,my); if(a){ world.selected=a; drawNN(a); updateSelInfo(); }
+});
+
+document.getElementById('selFollow').addEventListener('change',function(){ var t=getFollowTarget(); if(t){ world.selected=t; drawNN(t); updateSelInfo(); }});
+
+function updateSelInfo(){
+  var el=document.getElementById('selInfo'); var more=document.getElementById('selMore'); var a=world.selected; if(!a){ el.textContent=''; more.innerHTML=''; return; }
+  var b=a.brain; var layers=b.layers();
+  var perLayer = layers.map(function(L){ var cnt=0; var nodes=b.allNodes; for(var i=0;i<nodes.length;i++){ if(nodes[i].layer===L) cnt++; } return cnt; });
+  var outs = a.lastOut||[]; var ins = a.lastSense||[];
+  var turn=(outs[0]==null?0:outs[0]), thrust=(outs[1]==null?0:outs[1]), repro=(outs[2]==null?0:outs[2]), attack=(outs[3]==null?0:outs[3]);
+  var energy=a.energy.toFixed(1), speed=a.speed.toFixed(1), age=a.age.toFixed(1), fit=a.fitness.toFixed(1);
+  el.textContent = 'id:'+a.id+' type:'+a.type+' hp:'+a.hp.toFixed(1)+'/'+a.maxHP+' energy:'+energy+' age:'+age+' gen:'+a.gen+' children:'+a.children+' fitness:'+fit;
+
+  var foodClose = (ins[5]==null?0:ins[5]);
+  var kinCloseAgg = (ins[9]==null?0:ins[9]);
+  var kinUxAgg = (ins[7]==null?0:ins[7]);
+
+  var baseIdx=11; var maxK = Math.max(0, Math.min(NEI_K, Math.floor((ins.length-12)/6)));
+  var cPred=0, cPrey=0, predAlign=0, preyAlign=0; var nearestPred=Infinity, nearestPrey=Infinity; var kinParents=0, kinChildren=0, kinSibs=0; var nearestKin=Infinity, kinAlign=0, kinCnt=0;
+  for(var i=0;i<maxK;i++){
+    var idx = baseIdx + i*6; var ux = ins[idx]||0; var close = ins[idx+2]||0; var t = ins[idx+3]||0; var kin = ins[idx+4]||0; var sib = ins[idx+5]||0; if(close<=0) continue; var dist=(1-close)*Settings.visionRadius;
+    if(t>=0.5){ cPrey++; preyAlign+=ux; if(dist<nearestPrey) nearestPrey=dist; }
+    else if(t<=-0.5){ cPred++; predAlign+=ux; if(dist<nearestPred) nearestPred=dist; }
+    if(kin!==0 || sib>=0.5){ if(dist<nearestKin) nearestKin=dist; kinAlign+=ux; kinCnt++; if(kin>0) kinParents++; else if(kin<0) kinChildren++; if(sib>=0.5) kinSibs++; }
+  }
+  if(cPrey>0) preyAlign/=cPrey; if(cPred>0) predAlign/=cPred; if(kinCnt>0) kinAlign/=kinCnt;
+  var atk = a.type==='pred'? ((attack+1)/2) : 0;
+
+  function behaviorLabel(){
+    if(a.type==='prey'){
+      if(isFinite(nearestPred) && nearestPred<80 && thrust>0.4) return 'fleeing predator';
+      if(foodClose>0.6 && thrust>0.3) return 'foraging';
+      if(cPrey>3 && preyAlign>0.2) return 'schooling';
+      return 'wandering';
+    } else {
+      if(isFinite(nearestPrey) && nearestPrey<120 && thrust>0.3 && preyAlign>0.2) return 'chasing prey';
+      if(cPred>0 && predAlign>0.3) return 'dueling predator';
+      return 'wandering';
+    }
+  }
+
+  var colorSw = '<span class="swatch" style="background:hsl('+Math.round(a.h)+','+Math.round(a.s)+'%,'+Math.round(a.l)+'%)"></span>';
+  var info = [
+    ['Behavior', behaviorLabel()],
+    ['Color', colorSw+'h'+Math.round(a.h)+' s'+Math.round(a.s)+' l'+Math.round(a.l)],
+    ['Speed', ''+speed],
+    ['Heading', ''+(a.heading).toFixed(2)+' rad'],
+    ['Metabolism', ''+((a.type==='prey'?Settings.preyMet:Settings.predMet).toFixed(2))+'/s'],
+    ['Repro ready', ''+((a.energy>Settings.reproThresh && a.cooldown<=0 && repro>0.4) ? 'yes' : 'no')+' (cooldown '+a.cooldown.toFixed(1)+'s)']
+  ].concat(a.type==='pred' ? [['Attack (out)', atk.toFixed(2)], ['Attack CD', ''+a.atkCd.toFixed(2)+'s']] : [])
+   .concat([
+    ['Food dist', ''+((1-Math.max(0,Math.min(1,foodClose)))*Settings.visionRadius).toFixed(1)],
+    ['Kin dist (agg)', ''+((1-Math.max(0,Math.min(1,kinCloseAgg)))*Settings.visionRadius).toFixed(1)+' (avg cosθ '+kinUxAgg.toFixed(2)+')'],
+    ['Nearest kin', isFinite(nearestKin)? (nearestKin.toFixed(1)+' (n='+kinCnt+', avg cosθ '+kinAlign.toFixed(2)+')') : '—'],
+    ['Nearest prey', (isFinite(nearestPrey)? nearestPrey.toFixed(1)+' (n='+cPrey+')' : '—') + (cPrey? ' avg cosθ '+preyAlign.toFixed(2):'')],
+    ['Nearest predator', (isFinite(nearestPred)? nearestPred.toFixed(1)+' (n='+cPred+')' : '—') + (cPred? ' avg cosθ '+predAlign.toFixed(2):'')],
+    ['Nearby kin', (kinParents||kinChildren||kinSibs)? ('parents '+kinParents+', children '+kinChildren+', siblings '+kinSibs) : '—'] ,
+    ['Brain nodes', ''+b.allNodes.length+' (hidden '+b.hidden.length+')'],
+    ['Connections', ''+b.conns.length],
+    ['Layers', ''+layers.length+' [ '+perLayer.join(' | ')+' ]'],
+    ['Outputs', 'turn '+turn.toFixed(2)+', thrust '+thrust.toFixed(2)+', repr '+repro.toFixed(2)+(a.type==='pred'?(', atk '+attack.toFixed(2)):'')]
+  ]);
+  var html=''; for(var ii=0; ii<info.length; ii++){ html += '<div class="k">'+info[ii][0]+'</div><div class="v">'+info[ii][1]+'</div>'; }
+  more.innerHTML = html;
+}
+
+var running=true; document.getElementById('btnRun').addEventListener('click',function(){ running=!running; document.getElementById('btnRun').textContent = running? '⏸ Pause':'▶ Run'; });
+var oneStep=function(){ if(!running){ loop(true); } };
+
+document.getElementById('btnStep').addEventListener('click', oneStep);
+
+document.getElementById('btnReset').addEventListener('click',function(){ world.seed(); toast('World reset'+(DefaultBrains.prey||DefaultBrains.pred? ' (using default brain templates)':'')); });
+
+document.getElementById('btnCull').addEventListener('click',function(){
+  var cull=function(arr){
+    if(arr.length<10) return; var sorted=arr.slice().sort(function(a,b){ return (a.fitness/(1+a.age)) - (b.fitness/(1+b.age)); }); var n=Math.floor(arr.length*0.2); var toKill = new Set(sorted.slice(0,n).map(function(a){return a;}));
+    for(var i=0;i<arr.length;i++){ var a=arr[i]; if(toKill.has(a)) a.dead=true; }
+  };
+  cull(world.prey); cull(world.preds);
+});
+
+document.getElementById('btnSeed').addEventListener('click',function(){
+  var best=[world.bestPrey, world.bestPred].filter(function(x){return !!x}); for(var i=0;i<best.length;i++){ best[i].energy += 10; }
+});
+
+// Save / Load handlers
+var fileBrain=document.getElementById('fileBrain'); var loadMode='selected';
+document.getElementById('btnSaveBrain').addEventListener('click',function(){
+  if(!world.selected){ alert('No agent selected'); return; }
+  var json = world.selected.brain.toJSON(world.selected.type);
+  var name = world.selected.type+'_brain_'+world.selected.id+'.json';
+  download(name, JSON.stringify(json,null,2));
+  toast('Brain saved to file');
+});
+function handleImportedBrain(data, mode){
+  var targetType = TYPE_PREY;
+  if(mode==='selected'){
+    if(!world.selected){ alert('No agent selected'); return; }
+    targetType = world.selected.type;
+  } else if(mode==='default_pred'){ targetType = TYPE_PRED; }
+  else if(mode==='default_prey'){ targetType = TYPE_PREY; }
+  var reqIn = Agent.inputsFor(targetType);
+  var reqOut = Agent.outputsFor(targetType);
+  var inM = data.inputs, outM = data.outputs; var notes=[]; if(inM!==undefined && inM!==reqIn) notes.push('inputs '+inM+'→'+reqIn); if(outM!==undefined && outM!==reqOut) notes.push('outputs '+outM+'→'+reqOut);
+  var brain = Brain.fromJSON(data, reqIn, reqOut);
+  if(mode==='selected'){
+    world.selected.brain = brain; drawNN(world.selected); updateSelInfo(); toast('Brain loaded into selected'+(notes.length?(' ('+notes.join(', ')+')'):''));
+  } else if(mode==='default_prey'){
+    DefaultBrains.prey = data; toast('Default prey brain set. Use Reset to seed with it.'+(notes.length?(' ('+notes.join(', ')+')'):''));
+  } else if(mode==='default_pred'){
+    DefaultBrains.pred = data; toast('Default predator brain set. Use Reset to seed with it.'+(notes.length?(' ('+notes.join(', ')+')'):''));
+  }
+}
+document.getElementById('btnLoadSelected').addEventListener('click',function(){ loadMode='selected'; fileBrain.click(); });
+document.getElementById('btnLoadDefaultPrey').addEventListener('click',function(){ loadMode='default_prey'; fileBrain.click(); });
+document.getElementById('btnLoadDefaultPred').addEventListener('click',function(){ loadMode='default_pred'; fileBrain.click(); });
+fileBrain.addEventListener('change',function(e){ var f=e.target.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ try{ var data=JSON.parse(r.result); handleImportedBrain(data, loadMode); }catch(err){ console.error(err); alert('Invalid brain JSON'); } }; r.readAsText(f); e.target.value=''; });
+
+window.addEventListener('keydown',function(e){
+  if(e.code==='Space'){ e.preventDefault(); running=!running; document.getElementById('btnRun').textContent = running? '⏸ Pause':'▶ Run'; }
+  if(e.shiftKey && e.code==='Space'){ e.preventDefault(); oneStep(); }
+});
+
+// -------------------------- Main Loop --------------------------
+var last=0, fps=60; var fpsS=0.05; // smoothing
+function loop(stepOnce){ if(stepOnce==null) stepOnce=false;
+  var now=performance.now()/1000; var dt=now-last; last=now; if(!dt||!isFinite(dt)) dt=0.016;
+  dt = Math.min(dt,0.05);
+  if(running || stepOnce){
+    var scale = Settings.timescale||1; var eff = dt*scale; var maxStep=0.03; var steps=Math.max(1, Math.ceil(eff/maxStep)); var stepDt=eff/steps;
+    for(var s=0;s<steps;s++){ world.step(stepDt); }
+  }
+  // auto-select target when following modes other than 'selected'
+  var modeEl=document.getElementById('selFollow'); var mode=modeEl?modeEl.value:'selected';
+  if(mode!=='selected'){ var t=getFollowTarget(); if(t) world.selected=t; }
+  draw(); if(world.selected) drawNN(world.selected); updateSelInfo();
+  fps = lerp(fps, 1/Math.max(dt,1e-6), fpsS); updateStats(dt,fps);
+  if(!stepOnce) requestAnimationFrame(function(){ loop(false); });
+}
+
+// -------------------------- Minimal Self-Tests (console only) --------------------------
+(function runSelfTests(){
+  var ok=function(name,cond){ if(cond) console.log('✓',name); else console.error('✗',name); };
+  try{
+    var savedDepth=Settings.initDepth;
+    Settings.initDepth=5; var b=new Brain(10,4); var out=b.forward(Array(10).fill(0.5)); ok('Brain forward (depth=5) outputs finite & len=4', out.length===4 && out.every(Number.isFinite));
+    Settings.initDepth=savedDepth;
+
+    var w=new World(); w.food=[]; w.prey=[]; w.preds=[];
+    var p1=new Agent(TYPE_PRED,100,100,new Brain(10,4)); var p2=new Agent(TYPE_PRED,112,100,new Brain(10,4));
+    p1.brain.forward=function(){return [0,0,0,1]}; p2.brain.forward=function(){return [0,0,0,0]};
+    w.addAgent(p1); w.addAgent(p2); var hp=p2.hp; w.step(0.1); ok('Predator damages predator on contact', p2.hp<hp);
+
+    var prey=new Agent(TYPE_PREY,50,50,new Brain(10,3)); var w2=new World(); w2.prey=[prey]; w2.preds=[]; w2.food=[{x:60,y:50,energy:1}];
+    var s1=prey.sense(w2); var s2=p1.sense(w); ok('Sense vector lengths reflect K=4 encoding', s1.length=== (3+4+4+4*6+1) && s2.length=== (3+4+4+4*6+1));
+
+    var w3=new World(); for(var i=0;i<Settings.preyMax+20;i++) w3.addAgent(new Agent(TYPE_PREY, randf(0,100), randf(0,100))); ok('Prey cap enforced', w3.prey.length<=Settings.preyMax);
+
+    var a=new Agent(TYPE_PREY,10,10,new Brain(10,3)); var j=a.brain.toJSON(a.type); var imp=Brain.fromJSON(j, Agent.inputsFor(TYPE_PREY), Agent.outputsFor(TYPE_PREY)); ok('Export/Import roundtrip preserves output count', imp.outputs.length===a.brain.outputs.length);
+
+    // New: generation lineage
+    var mom=new Agent(TYPE_PREY,0,0,new Brain(10,3)); mom.gen=2; var kid=mom.spawnChild(); ok('Child generation = parent.gen+1', kid.gen===3 && kid.parentId===mom.id);
+  }catch(e){ console.error('Self-tests exception:', e); }
+})();
+
+// -------------------------- Boot --------------------------
+function boot(){
+  resize(); resizeNN(); initControls();
+  world.seed();
+  last=performance.now()/1000; requestAnimationFrame(function(){ loop(false); });
+}
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+
+})();
+</script>
+</body>
+</html>
