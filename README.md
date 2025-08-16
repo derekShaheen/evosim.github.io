@@ -1,4 +1,5 @@
 # Evolution Simulator — Predator & Prey (NEAT-ish)
+[Github.io](https://derekshaheen.github.io/evosim.github.io)
 
 A single-file, browser-based evolution sandbox. Agents (prey & predators) use small neural networks with **mutable topology** (nodes/layers/edges) and weights to forage, flee, hunt (including predator-vs-predator), and reproduce. Traits like **color**, **attack strength**, and **network structure** evolve over time. Includes a live NN viewer, follow modes, and save/load for brains.
 
